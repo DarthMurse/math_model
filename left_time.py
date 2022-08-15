@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset
 # Loading data
 sample_array = np.loadtxt('data_left.txt')
 label_array = np.loadtxt('label_left.txt')
-label_array *= 180
+label_array *= 1
 
 # Define constants
 # The total number of samples
@@ -24,7 +24,7 @@ output_size = 1
 time_length = count
 
 # The number of hidden_layers
-hidden_layers = 300
+hidden_layers = 400
 
 # The number of input_layers
 input_layers = attribute * time_length
@@ -33,10 +33,10 @@ input_layers = attribute * time_length
 batch_size = 64
 
 # Number of epochs
-epochs = 500
+epochs = 100
 
 # Learning rate
-lr = 0.01
+lr = 0.0001
 
 # Seperate traning, validating and testing sets, with proportion 7:2:1
 seperate_point1 = int(0.7 * sample_size)
@@ -76,26 +76,27 @@ class Model(nn.Module):
 
         self.layers = nn.Sequential(
                 nn.Linear(input_layers, hidden_layers),
-                nn.ReLU(),
-                nn.Linear(hidden_layers, 200),
-                nn.ReLU(),
-                nn.Linear(200, output_size),
-                nn.ReLU()
+                nn.Sigmoid(),
+                nn.Linear(hidden_layers, 300),
+                nn.Sigmoid(),
+                nn.Linear(300, output_size),
+                nn.Sigmoid()
                 )
 
     def forward(self, x):
         return self.layers(x)
 
-#model2 = Model(input_layers, hidden_layers, output_size)
-#model2 = torch.load('model2.pth')
-#optimizer2 = optim.Adam(model2.parameters(), lr=lr, weight_decay=0.005)
-#criterion2 = nn.MSELoss()
+#model = Model(input_layers, hidden_layers, output_size)
+#optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=0.0)
+#criterion = nn.MSELoss()
+#loss_curve = []
 
 def train_loop(dataloader, model, criterion, optimizer):
     size = len(dataloader.dataset)
     for batch, (X, y) in enumerate(dataloader):
         pred = model(X)
         loss = criterion(pred, y)
+        loss_curve.append(loss.item())
 
         optimizer.zero_grad()
         loss.backward()
@@ -115,24 +116,29 @@ def test_loop(dataloader, model, criterion):
             pred = model(X)
             test_loss += criterion(pred, y).sum().item()
             #correct += (pred.argmax(1) == y.argmax(1)).type(torch.float).sum().item()
-            correct += (abs(pred[:, 0] - y) <= 30).type(torch.float).sum().item()
+            correct += (abs(pred[:, 0] - y) <= 0.2).type(torch.float).sum().item()
 
     test_loss /= num_batches
     correct /= size
     print(f"Test Error: \n Accuracy: {(100 * correct): >0.1f}%, avg loss: {test_loss:0>f} \n")
     return correct
 
-'''
-for t in range(epochs):    
-    print(f"epoch {t+1} -------------------")
-    train_loop(train_loader, model, criterion, optimizer)
-    test_loop(train_loader, model, criterion)
-    test_loop(valid_loader, model, criterion)
-    #test_loop(test_dataloader, model, loss_fn)
+if __name__ == '__main__':
+    for t in range(epochs):    
+        print(f"epoch {t+1} -------------------")
+        train_loop(train_loader, model, criterion, optimizer)
+        test_loop(train_loader, model, criterion)
+        test_loop(valid_loader, model, criterion)
+        #test_loop(test_dataloader, model, loss_fn)
 
-torch.save(model, 'model2.pth')
-print("done!")
-x, y = valid_set.__getitem__(0)
-print(model(x))
-print(y)
-'''
+    plt.plot(loss_curve)
+    plt.title('learning curve')
+    plt.xlabel('time')
+    plt.ylabel('loss')
+    plt.show()
+    torch.save(model, 'model2.pth')
+    print("done!")
+    x, y = valid_set.__getitem__(0)
+    print(model(x))
+    print(y)
+
