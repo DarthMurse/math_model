@@ -1,78 +1,166 @@
-#数据导入及预处理
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-plt.style.use('ggplot')
-import  seaborn as sns
-sns.set_style('darkgrid')
-sns.set_palette('muted')
 
-#数据导入
-#aff1.csv即为附件1.csv,aff3.csv为附件3.csv，貌似中文文件名8太行QAQ
-df1=pd.read_csv(open('C_aff/2022-C-aff/aff1.csv'),encoding='utf-8',parse_dates=['ds'])
-df3=pd.read_csv(open('C_aff/2022-C-aff/aff3.csv'),encoding='utf-8',parse_dates=['ds'])
-#标准化处理
-df1.value_avg=round((df1.value_avg-df1.value_min)/(df1.value_max-df1.value_min),2)
-df3.value_avg=round((df3.value_avg-df3.value_min)/(df3.value_max-df3.value_min),2)
+# Read in csv files
+dataset1 = pd.read_csv('data/1.csv')
+dataset3 = pd.read_csv('data/3.csv')
+dataset2 = pd.read_csv('data/2.csv')
+dataset4 = pd.read_csv('data/4.csv')
 
-#去除无关属性
-df1=df1.drop(labels='value_max',axis=1)
-df1=df1.drop(labels='value_min',axis=1)
-df1=df1.drop(labels='unit',axis=1)
-df3=df3.drop(labels='value_max',axis=1)
-df3=df3.drop(labels='value_min',axis=1)
-df3=df3.drop(labels='unit',axis=1)
+# Find earliest and latest time
+earliest1 = min(dataset1['ds'])
+latest1 = max(dataset1['ds'])
+earliest3 = min(dataset3['ds'])
+latest3 = max(dataset3['ds'])
+earliest4 = min(dataset4['ds'])
+latest4 = max(dataset4['ds'])
+earliest = min(earliest4, earliest3)
+latest = max(latest4, latest3)
 
-#查看属性
-df1.info()
-df3.info()
+# Count time point
+time_point = pd.date_range(earliest, latest, freq='3D')
+count = len(time_point)
 
-#检查空值
-df1.isnull().any()
-df3.isnull().any()
+def extract_single_seq(user_name, metric, dataset):
+    user_data = dataset.loc[dataset['user_id'] == user_name]
+    metric_data = user_data[user_data['metrics'].str.startswith(str(metric)+',')]
 
-#按照'user_id'和'metrics'分组
-grouped1=df1.groupby(by=['user_id','metrics'])
-grouped3=df3.groupby(by=['user_id','metrics'])
-#print(grouped.head())
-#print(grouped.groups)
+    # Defining the starting day and ending day
+    start_date = min(user_data['ds'])
+    end_date = max(user_data['ds'])
+    
+    date = []
+    series = []
 
-#初始化附件1和附件3的dataframe
-#is_loss表示用户是否流失，为1时代表流失，为0时代表用户正常
-data1=pd.DataFrame({
-    'user_id':[],
-    'metrics':[],
-    'value_sum':[],
-    'duration':[],
-    'is_loss':[]
-})
-data3=pd.DataFrame({
-    'user_id':[],
-    'metrics':[],
-    'value_sum':[],
-    'duration':[],
-    'is_loss':[]
-})
+    for day in pd.date_range(start_date, end_date, freq='3D'):
+        date.append(day)
+        series.append(metric_data.loc[pd.to_datetime(metric_data['ds']) == day]['value_avg'].sum())
+    new_sery = pd.Series(series, index=date)
+    return new_sery
 
-#迭代，添加数据记录
-for (key1,key2), group_data in grouped1:
-    duration=group_data['ds'].max()-group_data.ds.min()
-    summation=group_data['value_avg'].sum()
-    data1.loc[len(data1.index)]=[key1,key2,summation,duration,1]
+def user_metric_to_array(user_name, dataset, metric, total=False):
+    pd_sery = extract_single_seq(user_name, metric, dataset)
+    values = pd_sery.values
+    date = pd_sery.index
+    start_point = (date[0] - time_point[0]) // pd.Timedelta('3 days')
+    values_length = len(values)
 
-for (key1,key2), group_data in grouped3:
-    duration=group_data['ds'].max()-group_data.ds.min()
-    summation=group_data['value_avg'].sum()
-    data3.loc[len(data3.index)]=[key1,key2,summation,duration,0]
+    if total:
+        result = np.zeros(count)
+        result[start_point:start_point+values_length] = np.asarray(values)
+    else:
+        result = np.asarray(values)
+    return result
 
-#显示dataframe的信息
-data1.info()
-data3.info()
+def user_to_array(user_name, dataset, total=False):
+    length = len(user_metric_to_array(user_name, dataset, 1))
+    if total:
+        result = np.zeros([15, count])
+    else:
+        result = np.zeros([15, length])
+    for i in range(15):
+        result[i] = user_metric_to_array(user_name, dataset, i+1, total)
 
-#print(data.head())
+    return result, length
 
-#合并两附件中的数据
-#data即为最终处理所得数据
-data=pd.concat([data1,data3])
-data.info()
+def user_resource(user_name, dataset, total=False):
+    metrics, length = user_to_array(user_name, dataset, total)
+    result = np.zeros([3, metrics.shape[1]])
+    result[0] = metrics[2] + metrics[7] + metrics[9] + metrics[12]  # computation
+    result[1] = metrics[0] + metrics[1] + metrics[4] + metrics[10] + metrics[11] + metrics[14]  # storage
+    result[2] = metrics[3] + metrics[5] + metrics[6] + metrics[13]
+    return result, length
+
+def user_drop_date(user_name):
+    sery = dataset2[dataset2['User_id'] == user_name].iloc[0]
+    date = sery.dropna()
+    date = date[1:]
+    return date
+
+def left_time(user_name, dataset):
+    user_data = dataset.loc[dataset['user_id'] == user_name]
+
+    # Defining the starting day and ending day
+    start_date = min(user_data['ds'])
+    end_date = max(user_data['ds'])
+    warning_date = user_drop_date(user_name)[-1]
+    
+    result = (pd.to_datetime(end_date) - pd.to_datetime(warning_date)) // pd.Timedelta('3 days')
+    return result
+
+def get_user_ids(dataset):
+    user_ids = dataset['user_id']
+    result = [user_ids[0]]
+    for term in user_ids:
+        if term != result[-1]:
+            result.append(term)
+    return result
+
+def preprocessing(dataset, is_dataset1):
+    user_ids = get_user_ids(dataset)
+    size = len(user_ids)
+    result = np.zeros([size, count * 3])
+
+    i = 0
+    for user_name in user_ids:
+        user_rsc, _ = user_resource(user_name, dataset, True)
+        result[i] = np.concatenate(user_rsc)
+        i += 1
+        if i % 10 == 0:
+            print(f"{i} users processed")
+
+    '''
+    label = np.zeros([size, 3])
+    if is_dataset1:
+        label[:, 0] = np.ones([size])
+        for i in range(size):
+            label[i, 2] = left_time(user_ids[i], dataset) / 180
+
+    if not is_dataset1:
+        label[:, 1] = np.ones([size])
+    '''
+    
+    return result
+
+if __name__ == '__main__':
+    '''
+    data1, label1 = preprocessing(dataset1, True)
+    data3, label3 = preprocessing(dataset3, False)
+    np.savetxt('data1.txt', data1)
+    np.savetxt('data3.txt', data3)
+    np.savetxt('label1.txt', label1)
+    np.savetxt('label3.txt', label3)
+    '''
+    data1 = np.loadtxt('data1.txt')
+    data3 = np.loadtxt('data3.txt')
+    label1 = np.loadtxt('label1.txt')
+    label3 = np.loadtxt('label3.txt')
+    
+    for i in range(data1.shape[0]):
+        max_value = data1[i, :].max()
+        if max_value >= 1:
+            data1[i, :] /= max_value
+    for i in range(data3.shape[0]):
+        max_value = data3[i, :].max()
+        if max_value >= 1:
+            data3[i, :] /= max_value
+
+    data = np.concatenate((data1, data3))
+    label = np.concatenate((label1, label3))
+    tmp = np.concatenate((data, label), axis=1)
+    np.random.shuffle(tmp)
+    data = tmp[:, 0:-3]
+    label = tmp[:, -3:]
+    np.savetxt('data.txt', data)
+    np.savetxt('label,txt', label)
+    np.savetxt('data_left.txt', data1)
+    np.savetxt('label_left.txt', label1[:, 2])
+    '''
+    data4 = preprocessing(dataset4, False)
+    for i in range(data4.shape[0]):
+        max_value = data4[i, :].max()
+        if max_value >= 1:
+            data4[i, :] /= max_value
+    np.savetxt('data4_normalized.txt', data4)
+    '''

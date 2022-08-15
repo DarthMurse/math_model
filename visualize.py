@@ -1,24 +1,38 @@
-# This script aims to visualize the behaviors of users. Drawing graphs from csv files in the data folder.
+from preprocessing import *
+import matplotlib.pyplot as plt
 
-'''
-About the csv files:
-    The record has an interval of 3 days.
-    There are 3 main categories of resources: computation, storage and network.
-    Each main category contains some metrics represented by numbers. For examples:
-        computation: 3, 8, 10, 13
-        storage: 1, 2, 5, 11, 12, 15
-        network: 4, 6, 7, 14
-    Each attribute has a number of form X-Y-Z (1-2-3 for example)
-    X is the main metric number, Y-Z is the sub metric number in the main metric X
-'''
+def draw_single_metric(user_name, dataset, title, metric, is_dataset1=True):
+    pd_series = extract_single_seq(user_name, metric, dataset)
+    date = pd_series.index
+    values = pd_series.values
+    drop_date = user_drop_date(user_name)
+    plt.plot(date, values, label=metric)
 
-def main_metric_seq(csv_num, user_num, metric_num):
-    '''
-    This function will plot all the sub metrics in the main metric of a user appeared in a csv file following time sequences.
-    And it will also mark the point that the user is about to stop using the service(data in 2.csv)
-    Parameters: 
-        csv_num: the csv file number that contains the user (e.g. 1-'1.csv')
-        user_num: the user to be tracked (e.g. 9-'user 9')
-        metric_num: the main metric of the user to be plotted following time sequence
-    '''
-    # code start here
+    if is_dataset1:
+        for day in drop_date:
+            day = pd.to_datetime(day)
+            plt.vlines(day, 0, max(values), linestyle='dashed')
+
+    plt.title(title)
+    plt.xlabel('time')
+    plt.ylabel('value')
+    plt.legend()
+
+def draw_multiple_metric(user_name, dataset, title, metrics, is_dataset1=True):
+    for i in metrics:
+        draw_single_metric(user_name, dataset, title, i, is_dataset1)
+
+def draw_user_data(user_name, dataset, title, rsc_type, is_dataset1=True):
+    if rsc_type == 'computation':
+        draw_multiple_metric(user_name, dataset, title, [3, 8, 10, 13], is_dataset1)
+    elif rsc_type == 'storage':
+        draw_multiple_metric(user_name, dataset, title, [1, 2, 5, 11, 12, 15], is_dataset1)
+    elif rsc_type == 'network':
+        draw_multiple_metric(user_name, dataset, title, [4, 6, 7, 14], is_dataset1)
+    else:
+        print('not a proper type of resource')
+
+#draw_multiple_metric('User 9', dataset1, 'User 9 computation', [3, 8, 10, 13])
+#draw_single_metric('User 9', dataset1, 'User 9 metric 3', 13)
+draw_user_data('User 28', dataset1, 'User 28', 'storage')
+plt.show()
